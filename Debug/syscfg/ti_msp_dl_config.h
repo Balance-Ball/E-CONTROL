@@ -91,19 +91,6 @@ extern "C" {
 #define GPIO_OLED_IOMUX_SCL                                      (IOMUX_PINCM15)
 #define GPIO_OLED_IOMUX_SCL_FUNC                       IOMUX_PINCM15_PF_I2C1_SCL
 
-/* Defines for LineFollower */
-#define LineFollower_INST                                                   I2C0
-#define LineFollower_INST_IRQHandler                             I2C0_IRQHandler
-#define LineFollower_INST_INT_IRQN                                 I2C0_INT_IRQn
-#define GPIO_LineFollower_SDA_PORT                                         GPIOA
-#define GPIO_LineFollower_SDA_PIN                                  DL_GPIO_PIN_0
-#define GPIO_LineFollower_IOMUX_SDA                               (IOMUX_PINCM1)
-#define GPIO_LineFollower_IOMUX_SDA_FUNC                IOMUX_PINCM1_PF_I2C0_SDA
-#define GPIO_LineFollower_SCL_PORT                                         GPIOA
-#define GPIO_LineFollower_SCL_PIN                                  DL_GPIO_PIN_1
-#define GPIO_LineFollower_IOMUX_SCL                               (IOMUX_PINCM2)
-#define GPIO_LineFollower_IOMUX_SCL_FUNC                IOMUX_PINCM2_PF_I2C0_SCL
-
 
 /* Defines for Debug */
 #define Debug_INST                                                         UART0
@@ -179,16 +166,6 @@ extern "C" {
 #define IMU_INST_DMA_TRIGGER                                 (DMA_UART3_RX_TRIG)
 
 
-/* Port definition for Pin Group KEY_DEBUG */
-#define KEY_DEBUG_PORT                                                   (GPIOB)
-
-/* Defines for KEY: GPIOB.21 with pinCMx 49 on package pin 20 */
-// pins affected by this interrupt request:["KEY"]
-#define KEY_DEBUG_INT_IRQN                                      (GPIOB_INT_IRQn)
-#define KEY_DEBUG_INT_IIDX                      (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
-#define KEY_DEBUG_KEY_IIDX                                  (DL_GPIO_IIDX_DIO21)
-#define KEY_DEBUG_KEY_PIN                                       (DL_GPIO_PIN_21)
-#define KEY_DEBUG_KEY_IOMUX                                      (IOMUX_PINCM49)
 /* Port definition for Pin Group LED_TEST */
 #define LED_TEST_PORT                                                    (GPIOB)
 
@@ -198,6 +175,58 @@ extern "C" {
 /* Defines for OS_LED: GPIOB.1 with pinCMx 13 on package pin 48 */
 #define LED_TEST_OS_LED_PIN                                      (DL_GPIO_PIN_1)
 #define LED_TEST_OS_LED_IOMUX                                    (IOMUX_PINCM13)
+/* Defines for KEY: GPIOB.21 with pinCMx 49 on package pin 20 */
+#define KEY_DEBUG_KEY_PORT                                               (GPIOB)
+// pins affected by this interrupt request:["KEY"]
+#define KEY_DEBUG_GPIOB_INT_IRQN                                (GPIOB_INT_IRQn)
+#define KEY_DEBUG_GPIOB_INT_IIDX                (DL_INTERRUPT_GROUP1_IIDX_GPIOB)
+#define KEY_DEBUG_KEY_IIDX                                  (DL_GPIO_IIDX_DIO21)
+#define KEY_DEBUG_KEY_PIN                                       (DL_GPIO_PIN_21)
+#define KEY_DEBUG_KEY_IOMUX                                      (IOMUX_PINCM49)
+/* Defines for Track: GPIOA.18 with pinCMx 40 on package pin 11 */
+#define KEY_DEBUG_Track_PORT                                             (GPIOA)
+// pins affected by this interrupt request:["Track"]
+#define KEY_DEBUG_GPIOA_INT_IRQN                                (GPIOA_INT_IRQn)
+#define KEY_DEBUG_GPIOA_INT_IIDX                (DL_INTERRUPT_GROUP1_IIDX_GPIOA)
+#define KEY_DEBUG_Track_IIDX                                (DL_GPIO_IIDX_DIO18)
+#define KEY_DEBUG_Track_PIN                                     (DL_GPIO_PIN_18)
+#define KEY_DEBUG_Track_IOMUX                                    (IOMUX_PINCM40)
+/* Defines for T_KEY: GPIOA.0 with pinCMx 1 on package pin 33 */
+#define Tracker_T_KEY_PORT                                               (GPIOA)
+#define Tracker_T_KEY_PIN                                        (DL_GPIO_PIN_0)
+#define Tracker_T_KEY_IOMUX                                       (IOMUX_PINCM1)
+/* Defines for S1: GPIOB.14 with pinCMx 31 on package pin 2 */
+#define Tracker_S1_PORT                                                  (GPIOB)
+#define Tracker_S1_PIN                                          (DL_GPIO_PIN_14)
+#define Tracker_S1_IOMUX                                         (IOMUX_PINCM31)
+/* Defines for S2: GPIOB.15 with pinCMx 32 on package pin 3 */
+#define Tracker_S2_PORT                                                  (GPIOB)
+#define Tracker_S2_PIN                                          (DL_GPIO_PIN_15)
+#define Tracker_S2_IOMUX                                         (IOMUX_PINCM32)
+/* Defines for S3: GPIOB.16 with pinCMx 33 on package pin 4 */
+#define Tracker_S3_PORT                                                  (GPIOB)
+#define Tracker_S3_PIN                                          (DL_GPIO_PIN_16)
+#define Tracker_S3_IOMUX                                         (IOMUX_PINCM33)
+/* Defines for S4: GPIOA.17 with pinCMx 39 on package pin 10 */
+#define Tracker_S4_PORT                                                  (GPIOA)
+#define Tracker_S4_PIN                                          (DL_GPIO_PIN_17)
+#define Tracker_S4_IOMUX                                         (IOMUX_PINCM39)
+/* Defines for S5: GPIOB.18 with pinCMx 44 on package pin 15 */
+#define Tracker_S5_PORT                                                  (GPIOB)
+#define Tracker_S5_PIN                                          (DL_GPIO_PIN_18)
+#define Tracker_S5_IOMUX                                         (IOMUX_PINCM44)
+/* Defines for S6: GPIOB.19 with pinCMx 45 on package pin 16 */
+#define Tracker_S6_PORT                                                  (GPIOB)
+#define Tracker_S6_PIN                                          (DL_GPIO_PIN_19)
+#define Tracker_S6_IOMUX                                         (IOMUX_PINCM45)
+/* Defines for S7: GPIOB.20 with pinCMx 48 on package pin 19 */
+#define Tracker_S7_PORT                                                  (GPIOB)
+#define Tracker_S7_PIN                                          (DL_GPIO_PIN_20)
+#define Tracker_S7_IOMUX                                         (IOMUX_PINCM48)
+/* Defines for S8: GPIOA.1 with pinCMx 2 on package pin 34 */
+#define Tracker_S8_PORT                                                  (GPIOA)
+#define Tracker_S8_PIN                                           (DL_GPIO_PIN_1)
+#define Tracker_S8_IOMUX                                          (IOMUX_PINCM2)
 
 
 /* clang-format on */
@@ -207,7 +236,6 @@ void SYSCFG_DL_initPower(void);
 void SYSCFG_DL_GPIO_init(void);
 void SYSCFG_DL_SYSCTL_init(void);
 void SYSCFG_DL_OLED_init(void);
-void SYSCFG_DL_LineFollower_init(void);
 void SYSCFG_DL_Debug_init(void);
 void SYSCFG_DL_EMM42_init(void);
 void SYSCFG_DL_Vision_init(void);

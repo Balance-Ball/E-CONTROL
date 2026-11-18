@@ -16,6 +16,7 @@ ORDERED_OBJS += \
 "./Hardware/IMU.o" \
 "./Hardware/KEY.o" \
 "./Hardware/OLED.o" \
+"./Hardware/Track8.o" \
 "./Hardware/emm42.o" \
 "./Hardware/vision.o" \
 "./Software/Debug.o" \
@@ -160,8 +161,8 @@ Balance_Ball.hex: $(EXE_OUTPUTS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(BIN_OUTPUTS__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "empty_mspm0g3507.o" "syscfg\ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "Hardware\IMU.o" "Hardware\KEY.o" "Hardware\OLED.o" "Hardware\emm42.o" "Hardware\vision.o" "Software\Debug.o" "Software\LQR.o" "Software\bsp_timer.o" 
-	-$(RM) "empty_mspm0g3507.d" "syscfg\ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "Hardware\IMU.d" "Hardware\KEY.d" "Hardware\OLED.d" "Hardware\emm42.d" "Hardware\vision.d" "Software\Debug.d" "Software\LQR.d" "Software\bsp_timer.d" 
+	-$(RM) "empty_mspm0g3507.o" "syscfg\ti_msp_dl_config.o" "startup_mspm0g350x_ticlang.o" "Hardware\IMU.o" "Hardware\KEY.o" "Hardware\OLED.o" "Hardware\Track8.o" "Hardware\emm42.o" "Hardware\vision.o" "Software\Debug.o" "Software\LQR.o" "Software\bsp_timer.o" 
+	-$(RM) "empty_mspm0g3507.d" "syscfg\ti_msp_dl_config.d" "startup_mspm0g350x_ticlang.d" "Hardware\IMU.d" "Hardware\KEY.d" "Hardware\OLED.d" "Hardware\Track8.d" "Hardware\emm42.d" "Hardware\vision.d" "Software\Debug.d" "Software\LQR.d" "Software\bsp_timer.d" 
 	-$(RMDIR) $(GEN_MISC_DIRS__QUOTED)
 	-@echo ' '
 

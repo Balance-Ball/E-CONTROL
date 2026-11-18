@@ -53,7 +53,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_init(void)
     /* Module-Specific Initializations*/
     SYSCFG_DL_SYSCTL_init();
     SYSCFG_DL_OLED_init();
-    SYSCFG_DL_LineFollower_init();
     SYSCFG_DL_Debug_init();
     SYSCFG_DL_EMM42_init();
     SYSCFG_DL_Vision_init();
@@ -91,7 +90,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_GPIO_reset(GPIOA);
     DL_GPIO_reset(GPIOB);
     DL_I2C_reset(OLED_INST);
-    DL_I2C_reset(LineFollower_INST);
     DL_UART_Main_reset(Debug_INST);
     DL_UART_Main_reset(EMM42_INST);
     DL_UART_Main_reset(Vision_INST);
@@ -101,7 +99,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_initPower(void)
     DL_GPIO_enablePower(GPIOA);
     DL_GPIO_enablePower(GPIOB);
     DL_I2C_enablePower(OLED_INST);
-    DL_I2C_enablePower(LineFollower_INST);
     DL_UART_Main_enablePower(Debug_INST);
     DL_UART_Main_enablePower(EMM42_INST);
     DL_UART_Main_enablePower(Vision_INST);
@@ -123,16 +120,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
         DL_GPIO_WAKEUP_DISABLE);
     DL_GPIO_enableHiZ(GPIO_OLED_IOMUX_SDA);
     DL_GPIO_enableHiZ(GPIO_OLED_IOMUX_SCL);
-    DL_GPIO_initPeripheralInputFunctionFeatures(GPIO_LineFollower_IOMUX_SDA,
-        GPIO_LineFollower_IOMUX_SDA_FUNC, DL_GPIO_INVERSION_DISABLE,
-        DL_GPIO_RESISTOR_NONE, DL_GPIO_HYSTERESIS_DISABLE,
-        DL_GPIO_WAKEUP_DISABLE);
-    DL_GPIO_initPeripheralInputFunctionFeatures(GPIO_LineFollower_IOMUX_SCL,
-        GPIO_LineFollower_IOMUX_SCL_FUNC, DL_GPIO_INVERSION_DISABLE,
-        DL_GPIO_RESISTOR_NONE, DL_GPIO_HYSTERESIS_DISABLE,
-        DL_GPIO_WAKEUP_DISABLE);
-    DL_GPIO_enableHiZ(GPIO_LineFollower_IOMUX_SDA);
-    DL_GPIO_enableHiZ(GPIO_LineFollower_IOMUX_SCL);
 
     DL_GPIO_initPeripheralOutputFunction(
         GPIO_Debug_IOMUX_TX, GPIO_Debug_IOMUX_TX_FUNC);
@@ -151,14 +138,55 @@ SYSCONFIG_WEAK void SYSCFG_DL_GPIO_init(void)
     DL_GPIO_initPeripheralInputFunction(
         GPIO_IMU_IOMUX_RX, GPIO_IMU_IOMUX_RX_FUNC);
 
-    DL_GPIO_initDigitalInputFeatures(KEY_DEBUG_KEY_IOMUX,
-		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
-		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
-
     DL_GPIO_initDigitalOutput(LED_TEST_BOARD_LED_IOMUX);
 
     DL_GPIO_initDigitalOutput(LED_TEST_OS_LED_IOMUX);
 
+    DL_GPIO_initDigitalInputFeatures(KEY_DEBUG_KEY_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_PULL_UP,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(KEY_DEBUG_Track_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalOutput(Tracker_T_KEY_IOMUX);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S1_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S2_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S3_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S4_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S5_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S6_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInputFeatures(Tracker_S7_IOMUX,
+		 DL_GPIO_INVERSION_DISABLE, DL_GPIO_RESISTOR_NONE,
+		 DL_GPIO_HYSTERESIS_DISABLE, DL_GPIO_WAKEUP_DISABLE);
+
+    DL_GPIO_initDigitalInput(Tracker_S8_IOMUX);
+
+    DL_GPIO_clearPins(GPIOA, Tracker_T_KEY_PIN);
+    DL_GPIO_enableOutput(GPIOA, Tracker_T_KEY_PIN);
+    DL_GPIO_setUpperPinsPolarity(GPIOA, DL_GPIO_PIN_18_EDGE_FALL);
+    DL_GPIO_clearInterruptStatus(GPIOA, KEY_DEBUG_Track_PIN);
+    DL_GPIO_enableInterrupt(GPIOA, KEY_DEBUG_Track_PIN);
     DL_GPIO_clearPins(GPIOB, LED_TEST_BOARD_LED_PIN |
 		LED_TEST_OS_LED_PIN);
     DL_GPIO_enableOutput(GPIOB, LED_TEST_BOARD_LED_PIN |
@@ -196,23 +224,6 @@ SYSCONFIG_WEAK void SYSCFG_DL_OLED_init(void) {
     DL_I2C_setAnalogGlitchFilterPulseWidth(OLED_INST,
         DL_I2C_ANALOG_GLITCH_FILTER_WIDTH_50NS);
     DL_I2C_enableAnalogGlitchFilter(OLED_INST);
-
-
-
-
-}
-static const DL_I2C_ClockConfig gLineFollowerClockConfig = {
-    .clockSel = DL_I2C_CLOCK_BUSCLK,
-    .divideRatio = DL_I2C_CLOCK_DIVIDE_1,
-};
-
-SYSCONFIG_WEAK void SYSCFG_DL_LineFollower_init(void) {
-
-    DL_I2C_setClockConfig(LineFollower_INST,
-        (DL_I2C_ClockConfig *) &gLineFollowerClockConfig);
-    DL_I2C_setAnalogGlitchFilterPulseWidth(LineFollower_INST,
-        DL_I2C_ANALOG_GLITCH_FILTER_WIDTH_50NS);
-    DL_I2C_enableAnalogGlitchFilter(LineFollower_INST);
 
 
 

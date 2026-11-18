@@ -27,29 +27,55 @@
 #endif
 
 static bool s_uart_initialized = false;
-static bool s_initialized[EMM42_MOTOR_COUNT] = {false, false, false};
+static bool s_initialized[EMM42_MOTOR_COUNT] = {false};
 static uint8_t s_acceleration[EMM42_MOTOR_COUNT] = {
+    EMM42_DEFAULT_ACCELERATION, EMM42_DEFAULT_ACCELERATION,
     EMM42_DEFAULT_ACCELERATION, EMM42_DEFAULT_ACCELERATION,
     EMM42_DEFAULT_ACCELERATION
 };
 static emm42_error_t s_last_error[EMM42_MOTOR_COUNT] = {
     EMM42_ERROR_NOT_INITIALIZED, EMM42_ERROR_NOT_INITIALIZED,
+    EMM42_ERROR_NOT_INITIALIZED, EMM42_ERROR_NOT_INITIALIZED,
     EMM42_ERROR_NOT_INITIALIZED
 };
 
-/* 返回选中电机的地址范围；ALL 只在软件中展开，不使用广播应答。 */
+/* 纯解析，不修改错误状态；分组标识只在软件中展开，不作为总线地址。 */
+static bool emm42_selection_range(uint8_t motor, uint8_t *first, uint8_t *last)
+{
+    switch (motor) {
+        case EMM42_MOTOR_ALL:
+            *first = EMM42_MOTOR_1;
+            *last = EMM42_MOTOR_5;
+            return true;
+        case EMM42_MOTOR_BALANCE:
+            *first = EMM42_MOTOR_1;
+            *last = EMM42_MOTOR_3;
+            return true;
+        case EMM42_MOTOR_WHEELS:
+            *first = EMM42_MOTOR_LEFT;
+            *last = EMM42_MOTOR_RIGHT;
+            return true;
+        default:
+            if (motor >= EMM42_MOTOR_1 && motor <= EMM42_MOTOR_COUNT) {
+                *first = motor;
+                *last = motor;
+                return true;
+            }
+            return false;
+    }
+}
+
+/* 操作接口的无效选择沿用原约定，记录五台的参数错误。 */
 static bool emm42_select(uint8_t motor, uint8_t *first, uint8_t *last)
 {
     uint8_t i;
-    if (motor > EMM42_MOTOR_COUNT) {
-        for (i = 0U; i < EMM42_MOTOR_COUNT; ++i) {
-            s_last_error[i] = EMM42_ERROR_INVALID_ARGUMENT;
-        }
-        return false;
+    if (emm42_selection_range(motor, first, last)) {
+        return true;
     }
-    *first = motor == EMM42_MOTOR_ALL ? EMM42_MOTOR_1 : motor;
-    *last = motor == EMM42_MOTOR_ALL ? EMM42_MOTOR_3 : motor;
-    return true;
+    for (i = 0U; i < EMM42_MOTOR_COUNT; ++i) {
+        s_last_error[i] = EMM42_ERROR_INVALID_ARGUMENT;
+    }
+    return false;
 }
 
 static void emm42_poll_delay(void)
@@ -290,7 +316,7 @@ bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
     return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame), NULL);
 }
 
-/* 读取只接受单台电机，避免 ALL 的多个结果写入同一输出指针。 */
+/* 读取只接受单台电机，避免分组的多个结果写入同一输出指针。 */
 static bool emm42_read(uint8_t motor, uint8_t command, void *output,
                         uint8_t *payload, uint8_t payload_length)
 {
@@ -299,7 +325,7 @@ static bool emm42_read(uint8_t motor, uint8_t command, void *output,
     if (!emm42_select(motor, &first, &last)) {
         return false;
     }
-    if (motor == EMM42_MOTOR_ALL || output == NULL) {
+    if (first != last || output == NULL) {
         uint8_t address;
         for (address = first; address <= last; ++address) {
             (void)emm42_fail(address, EMM42_ERROR_INVALID_ARGUMENT);
@@ -421,14 +447,11 @@ void emm42_set_acceleration(uint8_t motor, uint8_t acceleration)
 
 emm42_error_t emm42_get_last_error(uint8_t motor)
 {
-    uint8_t address;
-    if (motor > EMM42_MOTOR_COUNT) {
+    uint8_t first, last, address;
+    if (!emm42_selection_range(motor, &first, &last)) {
         return EMM42_ERROR_INVALID_ARGUMENT;
     }
-    if (motor != EMM42_MOTOR_ALL) {
-        return s_last_error[motor - 1U];
-    }
-    for (address = EMM42_MOTOR_1; address <= EMM42_MOTOR_3; ++address) {
+    for (address = first; address <= last; ++address) {
         if (s_last_error[address - 1U] != EMM42_ERROR_NONE) {
             return s_last_error[address - 1U];
         }

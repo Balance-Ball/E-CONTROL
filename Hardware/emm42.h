@@ -14,8 +14,9 @@ extern "C" {
  *
  * 接线: PB6 (UART1_TX) -> 电机 R，PB7 (UART1_RX) <- 电机 T，共地。
  * 本驱动适用于 TTL 接口；RS232/RS485 型号需要对应收发器。
- * 电机菜单: P_Serial=UART_FUN, UartBaud=115200, 三台 ID_Addr 分别为 1、2、3,
+ * 电机菜单: P_Serial=UART_FUN, UartBaud=115200, 五台 ID_Addr 分别为 1..5,
  *           Checksum=0x6B, Response=Receive, S_Vel_IS=Disable。
+ * 1..3 为平衡球电机，4 为左轮，5 为右轮；地址需要在各驱动器菜单中设置。
  * 默认前进=CW，后退=CCW；实际机械方向反向时修改 EMM42_FORWARD_DIRECTION。
  *
  * 示例（main.c）:
@@ -24,13 +25,15 @@ extern "C" {
  *
  *   SYSCFG_DL_init();
  *   emm42_init(EMM42_MOTOR_ALL);          // UART 初始化，无电机动作
- *   if (emm42_enable(EMM42_MOTOR_1) && forward(EMM42_MOTOR_1, 100U)) {
- *       // 电机已确认接收前进命令，速度 100 RPM。
+ *   if (emm42_enable(EMM42_MOTOR_ALL) && forward(EMM42_MOTOR_LEFT, 100U)) {
+ *       // 五台已确认使能，左轮已确认接收 100 RPM 前进命令。
  *   } else {
- *       emm42_error_t error = emm42_get_last_error(EMM42_MOTOR_1);
+ *       emm42_error_t error = emm42_get_last_error(EMM42_MOTOR_ALL);
  *       (void)error;                     // 在调试器中检查失败原因
  *   }
- *   // backward(EMM42_MOTOR_2, 100U);    // 电机 2 后退 100 RPM
+ *   // forward(EMM42_MOTOR_RIGHT, 80U); // 右轮单独调速；方向沿用全局定义
+ *   // emm42_stop(EMM42_MOTOR_BALANCE); // 仅停止平衡球电机 1..3
+ *   // emm42_stop(EMM42_MOTOR_WHEELS);  // 仅停止左右轮 4、5
  *   // emm42_stop(EMM42_MOTOR_ALL);      // 全部立即停止，保持使能
  *   // emm42_disable(EMM42_MOTOR_ALL);   // 全部关闭使能，释放保持力矩
  *
@@ -57,8 +60,10 @@ extern "C" {
  *   }
  *   (void)accepted;
  *
- * 运动/使能/停止支持编号 1、2、3 或 EMM42_MOTOR_ALL；读取接口只接受 1、2、3。
- * 全部选中时，按 1、2、3 逐台发送并等待应答；某台失败仍继续处理其余电机。
+ * 初始化、运动、使能、停止及加速度设置支持单台 1..5 或 BALANCE/WHEELS/ALL 分组。
+ * 读取接口只接受单台 1..5（含 LEFT/RIGHT 别名），不接受分组。
+ * 分组按地址升序逐台发送相同参数并等待应答；某台失败仍继续处理组内其余电机。
+ * 左右轮需要不同转速时，分别使用 EMM42_MOTOR_LEFT 和 EMM42_MOTOR_RIGHT。
  * bool 返回值仅在所有选中电机成功时为 true；这不是同步启动或广播命令。
  * 每台分别保存初始化状态、加速度和最后错误；全部操作的等待时间会累加。
  *
@@ -71,11 +76,17 @@ extern "C" {
  * 默认等待预算约 30ms/阶段，实际耗时受轮询开销和中断影响。
  * 不适合直接放入高频平衡控制中断。
  */
-#define EMM42_MOTOR_ALL             (0U)       /* 全部选中，不发送地址 0 广播 */
+#define EMM42_MOTOR_ALL             (0U)       /* 1..5，软件逐台展开 */
 #define EMM42_MOTOR_1               (1U)
 #define EMM42_MOTOR_2               (2U)
 #define EMM42_MOTOR_3               (3U)
-#define EMM42_MOTOR_COUNT           (3U)
+#define EMM42_MOTOR_4               (4U)
+#define EMM42_MOTOR_5               (5U)
+#define EMM42_MOTOR_LEFT            EMM42_MOTOR_4
+#define EMM42_MOTOR_RIGHT           EMM42_MOTOR_5
+#define EMM42_MOTOR_BALANCE         (0xFEU)    /* 平衡球电机 1..3 */
+#define EMM42_MOTOR_WHEELS          (0xFFU)    /* 左右轮电机 4、5 */
+#define EMM42_MOTOR_COUNT           (5U)
 #define EMM42_MAX_SPEED_RPM         (3000U)    /* 按实际电机能力调整 */
 #define EMM42_FORWARD_DIRECTION     (0U)       /* 0=CW, 1=CCW */
 #define EMM42_DEFAULT_ACCELERATION  (0U)       /* 0=立即调速, 1..255=曲线 */
@@ -118,12 +129,13 @@ bool backward(uint8_t motor, uint16_t speed_rpm);
 /* 0xFD 相对运动：速度 1..MAX RPM，加速度 0..255，脉冲数 0..UINT32_MAX。
  * 1.8° 电机、16 细分时每圈 3200 脉冲；随实际步距角/细分变化。
  * acceleration 直接用于本次命令，不改变 set_acceleration 保存的速度模式设置。
- * ALL 逐台立即启动，不是同步运动。true 为接收确认，请用 read_status 检查到位。 */
+ * 分组逐台立即启动，不是同步运动。true 为接收确认，请用 read_status 检查到位。 */
 bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
                          uint16_t speed_rpm, uint8_t acceleration,
                          uint32_t pulses);
 
-/* 以下读取仅接受单台编号 1..3 和非 NULL 输出指针；失败不修改输出。
+/* 以下读取仅接受单台编号 1..5 和非 NULL 输出指针；失败不修改输出。
+ * 分组读取不发送命令，将所选组的最后错误设为 INVALID_ARGUMENT。
  * 位置/误差原始单位为 65536/圈（不是运动脉冲数），符号 + 32 位幅值
  * 用 int64_t 完整保存；换算成 float 角度时，大数值可能损失精度。
  * 0x36 读取实际位置；0x37 读取位置误差（此协议不是 0x39）。
@@ -145,8 +157,8 @@ bool emm42_stop(uint8_t motor);
 
 /* 设置后续速度命令的加速度档位，不向电机发送命令。 */
 void emm42_set_acceleration(uint8_t motor, uint8_t acceleration);
-/* ALL 返回按编号找到的首个非 NONE 错误，全部成功则为 NONE。
- * 无效编号不发送命令；写操作将三台的最后错误设为 INVALID_ARGUMENT，
+/* 分组返回所选范围内按编号找到的首个非 NONE 错误，全部成功则为 NONE。
+ * 无效选择不发送命令，将五台的最后错误设为 INVALID_ARGUMENT；
  * get_last_error(无效编号) 直接返回 INVALID_ARGUMENT，不改变已有错误。 */
 emm42_error_t emm42_get_last_error(uint8_t motor);
 

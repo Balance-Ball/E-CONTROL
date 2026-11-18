@@ -4,6 +4,7 @@
 "./Hardware/IMU.o"
 "./Hardware/KEY.o"
 "./Hardware/OLED.o"
+"./Hardware/Track8.o"
 "./Hardware/emm42.o"
 "./Hardware/vision.o"
 "./Software/Debug.o"
