@@ -7,6 +7,8 @@ MockUART mock_uart;
 static unsigned init_count, frame_count, tx_size, rx_size, rx_pos;
 static uint8_t frames[64][13], lengths[64];
 static uint32_t rx[32];
+static unsigned busy_polls, rx_checks;
+static uint8_t tx_timeout_motor;
 static uint32_t position_magnitude[EMM42_MOTOR_COUNT];
 static uint8_t position_sign[EMM42_MOTOR_COUNT], status_flags[EMM42_MOTOR_COUNT];
 /* 0 success, 1 timeout, 2 rejected, 3 wrong address, 4 bad checksum,
@@ -21,9 +23,15 @@ void DL_UART_Main_disableInterrupt(MockUART *u, uint32_t m) { (void)u; (void)m; 
 void DL_UART_Main_disable(MockUART *u) { (void)u; ++init_count; }
 void DL_UART_Main_enableFIFOs(MockUART *u) { (void)u; }
 void DL_UART_Main_enable(MockUART *u) { (void)u; }
-bool DL_UART_Main_isBusy(MockUART *u) { (void)u; return false; }
+bool DL_UART_Main_isBusy(MockUART *u) {
+    (void)u;
+    if (busy_polls == 0) return false;
+    --busy_polls;
+    return true;
+}
 bool DL_UART_Main_isTXFIFOFull(MockUART *u) { (void)u; return false; }
 bool DL_UART_Main_isRXFIFOEmpty(MockUART *u) {
+    ++rx_checks;
     if (rx_pos == rx_size) return true;
     u->RXDATA = rx[rx_pos++];
     return false;
@@ -71,10 +79,12 @@ void DL_UART_Main_transmitData(MockUART *u, uint8_t b) {
         if (mode == 9) --rx_size;
     }
     lengths[frame_count++] = (uint8_t)n;
+    if (f[0] == tx_timeout_motor) busy_polls = EMM42_TIMEOUT_MS * 100U + 1U;
     tx_size = 0;
 }
 static void reset_io(void) {
     frame_count = tx_size = rx_size = rx_pos = 0;
+    busy_polls = rx_checks = tx_timeout_motor = 0;
     memset(frames, 0, sizeof(frames));
     memset(response, 0, sizeof(response));
     memset(position_magnitude, 0, sizeof(position_magnitude));
@@ -133,12 +143,11 @@ static void test_group_controls(void) {
             assert(memcmp(frames[i], command, sizeof(command)) == 0);
         }
 
-        // Failures do not stop the group; errors remain local to each address.
-        reset_io(); response[first-1] = 1; response[last-1] = 2;
+        // UART TX failure does not stop the group. Action replies are ignored.
+        reset_io(); tx_timeout_motor = first; response[last-1] = 2;
         assert(!emm42_stop(selector)); expect_range(0xFE, first, last);
         for (uint8_t m=1; m<=5; ++m) {
-            emm42_error_t expected = m == first ? EMM42_ERROR_TIMEOUT :
-                                     m == last ? EMM42_ERROR_REJECTED : EMM42_ERROR_NONE;
+            emm42_error_t expected = m == first ? EMM42_ERROR_TIMEOUT : EMM42_ERROR_NONE;
             assert(emm42_get_last_error(m) == expected);
         }
         assert(emm42_get_last_error(selector) == EMM42_ERROR_TIMEOUT);
@@ -163,26 +172,26 @@ static void test_group_state(void) {
     assert(forward(EMM42_MOTOR_ALL, 100)); expect_all(0xF6);
     for (unsigned i=0; i<5; ++i) assert(frames[i][5] == (i < 3 ? 11 : 22));
 
-    reset_io(); response[0] = 1; response[3] = 2; response[4] = 1;
+    reset_io(); tx_timeout_motor = EMM42_MOTOR_LEFT;
     assert(!emm42_stop(EMM42_MOTOR_ALL)); expect_all(0xFE);
-    assert(emm42_get_last_error(EMM42_MOTOR_BALANCE) == EMM42_ERROR_TIMEOUT);
-    assert(emm42_get_last_error(EMM42_MOTOR_WHEELS) == EMM42_ERROR_REJECTED);
+    assert(emm42_get_last_error(EMM42_MOTOR_BALANCE) == EMM42_ERROR_NONE);
+    assert(emm42_get_last_error(EMM42_MOTOR_WHEELS) == EMM42_ERROR_TIMEOUT);
     assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_TIMEOUT);
 
     reset_io(); emm42_init(EMM42_MOTOR_BALANCE);
     assert(frame_count == 0 && init_count == 1);
     assert(emm42_get_last_error(EMM42_MOTOR_BALANCE) == EMM42_ERROR_NONE);
-    assert(emm42_get_last_error(EMM42_MOTOR_LEFT) == EMM42_ERROR_REJECTED);
-    assert(emm42_get_last_error(EMM42_MOTOR_RIGHT) == EMM42_ERROR_TIMEOUT);
-    assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_REJECTED);
+    assert(emm42_get_last_error(EMM42_MOTOR_LEFT) == EMM42_ERROR_TIMEOUT);
+    assert(emm42_get_last_error(EMM42_MOTOR_RIGHT) == EMM42_ERROR_NONE);
+    assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_TIMEOUT);
     assert(emm42_get_last_error(6) == EMM42_ERROR_INVALID_ARGUMENT);
-    assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_REJECTED);
+    assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_TIMEOUT);
     emm42_set_acceleration(EMM42_MOTOR_BALANCE, 33);
-    assert(emm42_get_last_error(EMM42_MOTOR_WHEELS) == EMM42_ERROR_REJECTED);
+    assert(emm42_get_last_error(EMM42_MOTOR_WHEELS) == EMM42_ERROR_TIMEOUT);
     assert(forward(EMM42_MOTOR_ALL, 100)); expect_all(0xF6);
     for (unsigned i=0; i<5; ++i) assert(frames[i][5] == (i < 3 ? 33 : 22));
 
-    reset_io(); response[0] = 1;
+    reset_io(); tx_timeout_motor = EMM42_MOTOR_1;
     assert(!emm42_stop(EMM42_MOTOR_BALANCE)); expect_range(0xFE, 1, 3);
     reset_io(); emm42_init(EMM42_MOTOR_WHEELS);
     assert(frame_count == 0 && init_count == 1);
@@ -199,7 +208,7 @@ static void test_group_state(void) {
     for (unsigned i=0; i<3; ++i) assert(frames[i][5] == EMM42_DEFAULT_ACCELERATION);
 
     emm42_set_acceleration(EMM42_MOTOR_ALL, 55);
-    reset_io(); response[4] = 1;
+    reset_io(); tx_timeout_motor = EMM42_MOTOR_RIGHT;
     assert(!emm42_stop(EMM42_MOTOR_ALL)); expect_all(0xFE);
     assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_TIMEOUT);
     reset_io(); emm42_init(EMM42_MOTOR_ALL);
@@ -297,20 +306,17 @@ int main(void) {
     assert(frames[0][5] == 55 && frames[1][5] == 0 && frames[2][5] == 55);
     assert(frames[3][5] == 55 && frames[4][5] == 55);
     assert(init_count == 1);
-    reset_io(); response[0]=1; response[1]=2;
+    reset_io(); tx_timeout_motor = EMM42_MOTOR_1;
     assert(!emm42_stop(EMM42_MOTOR_ALL)); expect_all(0xFE);
     assert(emm42_get_last_error(1) == EMM42_ERROR_TIMEOUT);
-    assert(emm42_get_last_error(2) == EMM42_ERROR_REJECTED);
+    assert(emm42_get_last_error(2) == EMM42_ERROR_NONE);
     assert(emm42_get_last_error(3) == EMM42_ERROR_NONE);
     assert(emm42_get_last_error(EMM42_MOTOR_ALL) == EMM42_ERROR_TIMEOUT);
-    const emm42_error_t expected[] = {EMM42_ERROR_NONE, EMM42_ERROR_TIMEOUT,
-        EMM42_ERROR_REJECTED, EMM42_ERROR_TIMEOUT, EMM42_ERROR_RESPONSE,
-        EMM42_ERROR_UART, EMM42_ERROR_BAD_COMMAND, EMM42_ERROR_NONE};
     for (int mode=0; mode<=7; ++mode) {
         reset_io(); response[1]=mode;
-        bool ok=emm42_enable(2);
-        assert(ok == (expected[mode] == EMM42_ERROR_NONE));
-        assert(emm42_get_last_error(2) == expected[mode]);
+        assert(emm42_enable(2));
+        assert(rx_checks == 0);
+        assert(emm42_get_last_error(2) == EMM42_ERROR_NONE);
     }
     reset_io(); assert(!forward(EMM42_MOTOR_ALL, 3001));
     assert(frame_count == 0);
@@ -344,8 +350,13 @@ int main(void) {
         assert(frames[i][10] == 0 && frames[i][11] == 0);
     }
     reset_io(); response[0] = 1;
-    assert(!emm42_move_relative(EMM42_MOTOR_ALL, EMM42_DIRECTION_CW, 100, 0, 800));
+    assert(emm42_move_relative(EMM42_MOTOR_ALL, EMM42_DIRECTION_CW, 100, 0, 800));
     expect_all(0xFD);
+    reset_io(); response[0] = 1;
+    assert(emm42_move_absolute(1, EMM42_DIRECTION_CCW, 100, 0, 800));
+    const uint8_t absolute[] = {1, 0xFD, 1, 0, 100, 0, 0, 0, 3, 32, 1, 0, 0x6B};
+    assert(lengths[0] == sizeof(absolute) && memcmp(frames[0], absolute, sizeof(absolute)) == 0);
+    assert(rx_checks == 0);
     reset_io();
     assert(!emm42_move_relative(1, (emm42_direction_t)256, 100, 0, 10));
     assert(!emm42_move_relative(1, EMM42_DIRECTION_CW, 0, 0, 10));

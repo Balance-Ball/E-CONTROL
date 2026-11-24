@@ -26,7 +26,7 @@ extern "C" {
  *   SYSCFG_DL_init();
  *   emm42_init(EMM42_MOTOR_ALL);          // UART 初始化，无电机动作
  *   if (emm42_enable(EMM42_MOTOR_ALL) && forward(EMM42_MOTOR_LEFT, 100U)) {
- *       // 五台已确认使能，左轮已确认接收 100 RPM 前进命令。
+ *       // 五台的使能帧和左轮 100 RPM 前进帧均已发送。
  *   } else {
  *       emm42_error_t error = emm42_get_last_error(EMM42_MOTOR_ALL);
  *       (void)error;                     // 在调试器中检查失败原因
@@ -44,7 +44,7 @@ extern "C" {
  *   // 1.8°/16细分示例：CW 转 800 脉冲，即 90°；100 RPM，加速度档位 10。
  *   bool accepted = emm42_move_relative(EMM42_MOTOR_1, EMM42_DIRECTION_CW,
  *                                       100U, 10U, 800U);
- *   // 后续周期查询；accepted 不代表运动完成。
+ *   // 后续可显式查询位置与状态。
  *   int64_t position, error;
  *   emm42_status_t status;
  *   if (horizontal_valid && emm42_read_position(EMM42_MOTOR_1, &position)) {
@@ -62,14 +62,13 @@ extern "C" {
  *
  * 初始化、运动、使能、停止及加速度设置支持单台 1..5 或 BALANCE/WHEELS/ALL 分组。
  * 读取接口只接受单台 1..5（含 LEFT/RIGHT 别名），不接受分组。
- * 分组按地址升序逐台发送相同参数并等待应答；某台失败仍继续处理组内其余电机。
+ * 分组按地址升序逐台发送；某台发送失败仍继续处理组内其余电机。
  * 左右轮需要不同转速时，分别使用 EMM42_MOTOR_LEFT 和 EMM42_MOTOR_RIGHT。
- * bool 返回值仅在所有选中电机成功时为 true；这不是同步启动或广播命令。
+ * bool 返回值仅在所有选中电机的命令帧都完成发送时为 true。
  * 每台分别保存初始化状态、加速度和最后错误；全部操作的等待时间会累加。
  *
- * 动作成功=true 仅表示收到 02 应答，不保证到达目标速度或位置；读取成功表示获得有效数据。
- * 失败=false，可能是超时、电机拒绝、无效应答、UART 错误或参数错误。
- * 超时不能证明电机没有执行命令；本驱动不会自动重发。
+ * 动作成功表示本机 UART 已发完帧。读取成功表示收到有效应答。
+ * 超时、参数错误或查询应答无效时返回 false。
  *
  * UART1 由本驱动独占，使用轮询收发，不使用中断、SysTick 或 DMA。
  * 仅在主循环调用，不要在中断中调用，也不要并发调用。
@@ -99,7 +98,7 @@ typedef enum {
     EMM42_ERROR_NOT_INITIALIZED,
     EMM42_ERROR_INVALID_ARGUMENT,
     EMM42_ERROR_TIMEOUT,
-    EMM42_ERROR_REJECTED,       /* E2: 如未使能、堵转保护 */
+    EMM42_ERROR_REJECTED,       /* 保留旧枚举值 */
     EMM42_ERROR_BAD_COMMAND,    /* 00 EE: 电机报告错误命令 */
     EMM42_ERROR_RESPONSE,
     EMM42_ERROR_UART
@@ -129,8 +128,13 @@ bool backward(uint8_t motor, uint16_t speed_rpm);
 /* 0xFD 相对运动：速度 1..MAX RPM，加速度 0..255，脉冲数 0..UINT32_MAX。
  * 1.8° 电机、16 细分时每圈 3200 脉冲；随实际步距角/细分变化。
  * acceleration 直接用于本次命令，不改变 set_acceleration 保存的速度模式设置。
- * 分组逐台立即启动，不是同步运动。true 为接收确认，请用 read_status 检查到位。 */
+ * 分组逐台发送。true 为 UART 发送完成。 */
 bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
+                         uint16_t speed_rpm, uint8_t acceleration,
+                         uint32_t pulses);
+
+/* 0xFD 绝对运动。direction 表示驱动器零位两侧的方向，pulses 为目标幅值。 */
+bool emm42_move_absolute(uint8_t motor, emm42_direction_t direction,
                          uint16_t speed_rpm, uint8_t acceleration,
                          uint32_t pulses);
 

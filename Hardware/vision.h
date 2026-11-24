@@ -14,6 +14,7 @@ typedef struct
     int16_t dx;
     int16_t dy;
     uint8_t sum;
+    uint32_t sample_ms;
 } vision_data;
 
 void vision_init(void);

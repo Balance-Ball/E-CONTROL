@@ -1,10 +1,15 @@
-#ifndef _LQR_H
-#define _LQR_H
+#ifndef SOFTWARE_LQR_H
+#define SOFTWARE_LQR_H
 
-#include "ti_msp_dl_config.h"
+#include <stdbool.h>
+#include <stdint.h>
 
-void LQR(int16_t dx,int16_t dy,uint32_t cur_time);
+typedef struct {
+    bool valid;
+    float ax_mps2;  /* 沿图像 +X 和 +Y 的期望滚动加速度 */
+    float ay_mps2;
+} LQR_Req;
 
-
+LQR_Req LQR_Update(uint32_t now_ms);
 
 #endif

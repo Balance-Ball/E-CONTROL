@@ -10,8 +10,12 @@
 #endif
 
 #define OLED_PAGES          (OLED_HEIGHT / 8U)
-#define OLED_HALF_BIT_US    (5U)    /* GPIO/API 开销使实际速率低于约100kHz */
-#define OLED_SCL_TIMEOUT_US (1000U)
+#define OLED_TRANSFER_TIMEOUT_US (30000U)
+#define OLED_TRANSFER_COMPLETE   (DL_I2C_INTERRUPT_CONTROLLER_TX_DONE | \
+                                  DL_I2C_INTERRUPT_CONTROLLER_STOP)
+#define OLED_TRANSFER_EVENTS     (OLED_TRANSFER_COMPLETE | \
+                                  DL_I2C_INTERRUPT_CONTROLLER_NACK | \
+                                  DL_I2C_INTERRUPT_CONTROLLER_ARBITRATION_LOST)
 
 static uint8_t s_buffer[OLED_PAGES][OLED_WIDTH];
 static uint8_t s_dirty_min[OLED_PAGES];
@@ -133,137 +137,57 @@ static bool oled_ready(void)
     return s_initialized || oled_fail(OLED_ERROR_NOT_INITIALIZED);
 }
 
-static void oled_delay_us(uint32_t microseconds)
+static bool oled_wait_bus_idle(void)
 {
-    while (microseconds-- > 0U) {
-        delay_cycles(CPUCLK_FREQ / 1000000U);
-    }
-}
-
-static void oled_low(GPIO_Regs *port, uint32_t pin)
-{
-    DL_GPIO_clearPins(port, pin);
-    DL_GPIO_enableOutput(port, pin);
-}
-
-static void oled_release(GPIO_Regs *port, uint32_t pin)
-{
-    DL_GPIO_disableOutput(port, pin);
-}
-
-static bool oled_scl_high(void)
-{
-    uint32_t remaining = OLED_SCL_TIMEOUT_US;
-    oled_release(OLED_SCL_PORT, OLED_SCL_PIN);
-    while (DL_GPIO_readPins(OLED_SCL_PORT, OLED_SCL_PIN) == 0U) {
+    uint32_t remaining = OLED_TRANSFER_TIMEOUT_US;
+    while ((DL_I2C_getControllerStatus(OLED_INST) &
+            (DL_I2C_CONTROLLER_STATUS_IDLE | DL_I2C_CONTROLLER_STATUS_BUSY_BUS)) !=
+           DL_I2C_CONTROLLER_STATUS_IDLE) {
         if (remaining-- == 0U) {
             return oled_fail(OLED_ERROR_BUS);
         }
-        oled_delay_us(1U);
+        delay_cycles(CPUCLK_FREQ / 1000000U);
     }
     return true;
-}
-
-static void oled_scl_low(void)
-{
-    oled_low(OLED_SCL_PORT, OLED_SCL_PIN);
-}
-
-static bool oled_stop(void)
-{
-    oled_scl_low();
-    oled_low(OLED_SDA_PORT, OLED_SDA_PIN);
-    oled_delay_us(OLED_HALF_BIT_US);
-    if (!oled_scl_high()) {
-        oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-        return false;
-    }
-    oled_delay_us(OLED_HALF_BIT_US);
-    oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-    oled_delay_us(OLED_HALF_BIT_US);
-    if (DL_GPIO_readPins(OLED_SDA_PORT, OLED_SDA_PIN) == 0U) {
-        return oled_fail(OLED_ERROR_BUS);
-    }
-    return true;
-}
-
-static bool oled_start(void)
-{
-    oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-    if (!oled_scl_high()) {
-        return false;
-    }
-    oled_delay_us(OLED_HALF_BIT_US);
-    if (DL_GPIO_readPins(OLED_SDA_PORT, OLED_SDA_PIN) == 0U) {
-        return oled_fail(OLED_ERROR_BUS);
-    }
-    oled_low(OLED_SDA_PORT, OLED_SDA_PIN);
-    oled_delay_us(OLED_HALF_BIT_US);
-    oled_scl_low();
-    return true;
-}
-
-static bool oled_write_byte(uint8_t value)
-{
-    uint8_t bit;
-    for (bit = 0U; bit < 8U; ++bit) {
-        if ((value & 0x80U) != 0U) {
-            oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-        } else {
-            oled_low(OLED_SDA_PORT, OLED_SDA_PIN);
-        }
-        oled_delay_us(OLED_HALF_BIT_US);
-        if (!oled_scl_high()) {
-            oled_scl_low();
-            return false;
-        }
-        oled_delay_us(OLED_HALF_BIT_US);
-        oled_scl_low();
-        value = (uint8_t)(value << 1);
-    }
-
-    oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-    oled_delay_us(OLED_HALF_BIT_US);
-    if (!oled_scl_high()) {
-        oled_scl_low();
-        return false;
-    }
-    oled_delay_us(OLED_HALF_BIT_US);
-    bool acknowledged = DL_GPIO_readPins(OLED_SDA_PORT, OLED_SDA_PIN) == 0U;
-    oled_scl_low();
-    return acknowledged || oled_fail(OLED_ERROR_NACK);
 }
 
 static bool oled_transfer(uint8_t control, const uint8_t *data, uint16_t count)
 {
-    uint16_t i;
-    if (!oled_start()) {
-        oled_release(OLED_SCL_PORT, OLED_SCL_PIN);
-        oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
+    if (!oled_wait_bus_idle()) {
         return false;
     }
-    if (!oled_write_byte((uint8_t)(OLED_I2C_ADDRESS << 1)) ||
-        !oled_write_byte(control)) {
-        goto failed;
-    }
-    for (i = 0U; i < count; ++i) {
-        if (!oled_write_byte(data[i])) {
-            goto failed;
-        }
-    }
-    if (!oled_stop()) {
-        return false;
-    }
-    s_error = OLED_ERROR_NONE;
-    return true;
 
-failed: {
-        /* 清理总线但保留导致失败的最初原因。 */
-        OLED_Error saved = s_error;
-        (void)oled_stop();
-        s_error = saved;
-        return false;
+    DL_I2C_clearInterruptStatus(OLED_INST, OLED_TRANSFER_EVENTS);
+    DL_I2C_flushControllerTXFIFO(OLED_INST);
+    DL_I2C_transmitControllerData(OLED_INST, control);
+    uint16_t queued = DL_I2C_fillControllerTXFIFO(OLED_INST, data, count);
+    DL_I2C_startControllerTransfer(OLED_INST, OLED_I2C_ADDRESS,
+                                  DL_I2C_CONTROLLER_DIRECTION_TX, count + 1U);
+
+    uint32_t remaining = OLED_TRANSFER_TIMEOUT_US;
+    while (remaining-- > 0U) {
+        uint32_t events = DL_I2C_getRawInterruptStatus(OLED_INST, OLED_TRANSFER_EVENTS);
+        if ((events & DL_I2C_INTERRUPT_CONTROLLER_ARBITRATION_LOST) != 0U) {
+            return oled_fail(OLED_ERROR_BUS);
+        }
+        if ((events & DL_I2C_INTERRUPT_CONTROLLER_NACK) != 0U) {
+            return oled_fail(OLED_ERROR_NACK);
+        }
+        if ((events & OLED_TRANSFER_COMPLETE) == OLED_TRANSFER_COMPLETE) {
+            s_error = OLED_ERROR_NONE;
+            return true;
+        }
+        if (queued < count) {
+            queued += DL_I2C_fillControllerTXFIFO(OLED_INST, &data[queued], count - queued);
+        }
+        delay_cycles(CPUCLK_FREQ / 1000000U);
     }
+
+    /* 释放卡住的控制器传输，下次写入会先检查总线并清空 FIFO。 */
+    DL_I2C_disableController(OLED_INST);
+    DL_I2C_resetControllerTransfer(OLED_INST);
+    DL_I2C_enableController(OLED_INST);
+    return oled_fail(OLED_ERROR_BUS);
 }
 
 static void oled_mark_all(void)
@@ -340,32 +264,8 @@ bool OLED_Init(void)
     s_initialized = false;
     s_auto_refresh = true;
     s_font = OLED_FONT_8X16;
-    DL_GPIO_enablePower(OLED_SCL_PORT);
-    DL_GPIO_enablePower(OLED_SDA_PORT);
-    delay_cycles(POWER_STARTUP_DELAY);
-    oled_release(OLED_SCL_PORT, OLED_SCL_PIN);
-    oled_release(OLED_SDA_PORT, OLED_SDA_PIN);
-    DL_GPIO_initDigitalInput(OLED_SCL_IOMUX);
-    DL_GPIO_initDigitalInput(OLED_SDA_IOMUX);
-    oled_delay_us(100000U); /* allow module power-on reset to settle */
+    delay_cycles(CPUCLK_FREQ / 10U); /* 等待 OLED 模块上电复位。 */
 
-    if (!oled_scl_high()) {
-        return false;
-    }
-    /* 单主机总线恢复：从机停在半个字节时，最多发送9个时钟后发STOP。 */
-    if (DL_GPIO_readPins(OLED_SDA_PORT, OLED_SDA_PIN) == 0U) {
-        for (x = 0U; x < 9U; ++x) {
-            oled_scl_low();
-            oled_delay_us(OLED_HALF_BIT_US);
-            if (!oled_scl_high()) {
-                return false;
-            }
-            oled_delay_us(OLED_HALF_BIT_US);
-        }
-        if (!oled_stop()) {
-            return false;
-        }
-    }
     if (!oled_transfer(0x00U, setup, (uint16_t)sizeof(setup))) {
         return false;
     }

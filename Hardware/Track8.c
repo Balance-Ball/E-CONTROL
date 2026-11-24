@@ -1,17 +1,15 @@
 #include "Track8.h"
+
+#include "Software/ControlConfig.h"
 #include "ti_msp_dl_config.h"
-#define Kp 0x00U
-#define Ki 0x00U
-#define Kd 0x00U
+#include <math.h>
 
-typedef struct
-{
-    GPIO_Regs *Port;
+typedef struct {
+    GPIO_Regs *port;
     uint32_t pin;
-} TrackIO;
+} TrackInput;
 
-static const TrackIO sensors[8] = {
-    {0,0}
+static const TrackInput sensors[8] = {
     {Tracker_S1_PORT, Tracker_S1_PIN},
     {Tracker_S2_PORT, Tracker_S2_PIN},
     {Tracker_S3_PORT, Tracker_S3_PIN},
@@ -22,29 +20,56 @@ static const TrackIO sensors[8] = {
     {Tracker_S8_PORT, Tracker_S8_PIN},
 };
 
-static uint8_t state[8];
-static const int8_t weights[8] = {-7, -5, -3, -1, 1, 3, 5, 7};
-static float error = 0;
+static Track_Req latest;
+static bool sampled;
+static uint32_t sample_ms;
 
-static void read_track_status();
-
-
-static void read_track_status()
+static uint8_t read_line_mask(void)
 {
-    uint8_t cnt = 0;
-    uint8_t sum = 0;
-    error = 0;
-    for(int i = 1;i <= 8;i++)
-    {
-        state[i] = (DL_GPIO_readPins(sensors->Port,sensors->pin)) != 0U;
-        if(DL_GPIO_readPins(sensors->Port,sensors->pin)) cnt++;
-        sum += state[i] * weights[i];
+    uint8_t mask = 0;
+    for (unsigned i = 0; i < 8U; ++i) {
+        if (DL_GPIO_readPins(sensors[i].port, sensors[i].pin) == 0U) {
+            mask |= (uint8_t)(1U << i);
+        }
     }
-    error = (float)sum / cnt;
+    return mask;
 }
 
-static void cal_track()
+static Track_Req track_demand(uint8_t mask)
 {
+    static const int8_t weights[8] = {7, 5, 3, 1, -1, -3, -5, -7};
+    unsigned hits = 0;
+    unsigned segments = 0;
+    int sum = 0;
 
+    for (unsigned i = 0; i < 8U; ++i) {
+        if ((mask & (1U << i)) != 0U) {
+            ++hits;
+            sum += weights[i];
+            if (i == 0U || (mask & (1U << (i - 1U))) == 0U) {
+                ++segments;
+            }
+        }
+    }
+    if (segments != 1U || hits == 8U) {
+        return (Track_Req){0};
+    }
+
+    float error = (float)sum / (7.0f * (float)hits);
+    return (Track_Req){
+        .line_valid = true,
+        .straight = fabsf(error) <= CONTROL_TRACK_STRAIGHT_ERROR,
+        .speed_mps = CONTROL_CRUISE_MPS,
+        .yaw_rate_rad_s = CONTROL_TRACK_YAW_GAIN * error,
+    };
 }
 
+Track_Req Track_Update(uint32_t now_ms)
+{
+    if (!sampled || now_ms - sample_ms >= CONTROL_PERIOD_MS) {
+        latest = track_demand(read_line_mask());
+        sample_ms = now_ms;
+        sampled = true;
+    }
+    return latest;
+}

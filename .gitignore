@@ -1,0 +1,8 @@
+# CCS build outputs and clangd cache
+/Debug/*
+
+# Motor driver validation sources
+!/Debug/emm42_validation/
+/Debug/emm42_validation/*
+!/Debug/emm42_validation/test_emm42.c
+!/Debug/emm42_validation/ti_msp_dl_config.h

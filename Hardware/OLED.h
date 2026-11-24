@@ -10,11 +10,9 @@ extern "C" {
 
 /*
  * SSD1306 0.96-inch 128x64, 4-pin I2C module.
- * 软件 I2C: PA8=SCL, PA9=SDA, VCC=3.3V, GND 共地。
+ * 硬件 I2C1 由 SysConfig 配置为 PB2=SCL、PB3=SDA，VCC=3.3V，GND 共地。
  * SDA/SCL 必须有到 3.3V 的上拉电阻（通常模块已带，未带则外接约 4.7k）。
- * GPIO 模拟开漏：只主动拉低，高电平通过释放引脚获得。
- * 不占用硬件 I2C、定时器、中断；在 SYSCFG_DL_init() 后调用 OLED_Init()。
- * 请勿再把以下两根引脚配置给其他外设。
+ * 在 SYSCFG_DL_init() 后调用 OLED_Init()。传输通过 I2C1 轮询完成。
  * 4 针模块需自带上电复位电路；本驱动不控制单独的 RES# 引脚。
  *
  * 示例:
@@ -39,12 +37,6 @@ extern "C" {
 #define OLED_WIDTH          (128U)
 #define OLED_HEIGHT         (64U)
 #define OLED_I2C_ADDRESS    (0x3CU)  /* 7 位地址，可改 0x3D，不是 0x78 */
-#define OLED_SCL_PORT       GPIOA
-#define OLED_SCL_PIN        DL_GPIO_PIN_8
-#define OLED_SCL_IOMUX      IOMUX_PINCM19
-#define OLED_SDA_PORT       GPIOA
-#define OLED_SDA_PIN        DL_GPIO_PIN_9
-#define OLED_SDA_IOMUX      IOMUX_PINCM20
 
 typedef enum {
     OLED_FONT_8X16 = 0,  /* 默认: 4 行 x 16 列，5x7 字形纵向放大并留白 */
@@ -56,7 +48,7 @@ typedef enum {
     OLED_ERROR_NOT_INITIALIZED,
     OLED_ERROR_ARGUMENT,
     OLED_ERROR_NACK,      /* 地址/数据未应答：检查接线、电源、地址 */
-    OLED_ERROR_BUS,       /* SDA 被占用或 SCL 释放后不能变高 */
+    OLED_ERROR_BUS,       /* 总线忙、仲裁丢失或传输超时 */
     OLED_ERROR_TEXT,      /* 非 ASCII 可打印字符，或文本超出屏幕 */
     OLED_ERROR_FORMAT     /* 格式化失败，或结果超过 127 字节 */
 } OLED_Error;

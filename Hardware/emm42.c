@@ -119,7 +119,7 @@ static bool emm42_discard_rx(uint8_t motor)
     return true;
 }
 
-/* payload=NULL 表示动作 ACK；否则读取固定长度数据（状态 1 字节、位置 5 字节）。 */
+/* 读取固定长度数据（状态 1 字节、位置 5 字节）。 */
 static bool emm42_wait_response(uint8_t motor, uint8_t command,
                                 uint8_t *payload, uint8_t payload_length)
 {
@@ -152,15 +152,8 @@ static bool emm42_wait_response(uint8_t motor, uint8_t command,
                             return emm42_fail(motor, EMM42_ERROR_BAD_COMMAND);
                         }
                         if (window[1] == command) {
-                            if (payload == NULL && window[2] == 0xE2U) {
-                                return emm42_fail(motor, EMM42_ERROR_REJECTED);
-                            }
-                            if ((payload == NULL && window[2] == 0x02U) ||
-                                (payload != NULL &&
-                                 (payload_length != 5U || window[2] <= 1U))) {
-                                if (payload != NULL) {
-                                    memcpy(payload, &window[2], payload_length);
-                                }
+                            if (payload_length != 5U || window[2] <= 1U) {
+                                memcpy(payload, &window[2], payload_length);
                                 s_last_error[motor - 1U] = EMM42_ERROR_NONE;
                                 return true;
                             }
@@ -180,8 +173,7 @@ static bool emm42_wait_response(uint8_t motor, uint8_t command,
                                           EMM42_ERROR_TIMEOUT);
 }
 
-static bool emm42_exchange(const uint8_t *frame, uint8_t length,
-                           uint8_t *payload, uint8_t payload_length)
+static bool emm42_transmit(const uint8_t *frame, uint8_t length)
 {
     uint32_t remaining = EMM42_WAIT_STEPS;
     uint8_t i;
@@ -190,11 +182,6 @@ static bool emm42_exchange(const uint8_t *frame, uint8_t length,
     if (!s_initialized[motor - 1U]) {
         return emm42_fail(motor, EMM42_ERROR_NOT_INITIALIZED);
     }
-    /* 在发新命令前清理已有数据，避免把缓冲区中的旧应答当成本次成功。 */
-    if (!emm42_wait_tx_idle(motor) || !emm42_discard_rx(motor)) {
-        return false;
-    }
-
     for (i = 0U; i < length; ++i) {
         while (DL_UART_Main_isTXFIFOFull(EMM42_INST)) {
             if (remaining == 0U) {
@@ -209,30 +196,34 @@ static bool emm42_exchange(const uint8_t *frame, uint8_t length,
     if (!emm42_wait_tx_idle(motor)) {
         return false;
     }
-    return emm42_wait_response(motor, frame[1], payload, payload_length);
+    s_last_error[motor - 1U] = EMM42_ERROR_NONE;
+    return true;
 }
 
 /* acceleration 非空时，为每台电机填入独立的加速度设置。 */
-static bool emm42_send_selected(uint8_t motor, uint8_t *frame, uint8_t length,
-                                uint8_t *acceleration)
+static bool emm42_send_range(uint8_t first, uint8_t last, uint8_t *frame,
+                             uint8_t length, uint8_t *acceleration)
 {
-    uint8_t first, last, address;
     bool success = true;
 
-    if (!emm42_select(motor, &first, &last)) {
-        return false;
-    }
-    for (address = first; address <= last; ++address) {
+    for (uint8_t address = first; address <= last; ++address) {
         frame[0] = address;
         if (acceleration != NULL) {
             *acceleration = s_acceleration[address - 1U];
         }
         /* 不短路：即使一台失败，也尝试处理其他选中的电机。 */
-        if (!emm42_exchange(frame, length, NULL, 1U)) {
+        if (!emm42_transmit(frame, length)) {
             success = false;
         }
     }
     return success;
+}
+
+static bool emm42_send_selected(uint8_t motor, uint8_t *frame, uint8_t length)
+{
+    uint8_t first, last;
+    return emm42_select(motor, &first, &last) &&
+           emm42_send_range(first, last, frame, length, NULL);
 }
 
 void emm42_init(uint8_t motor)
@@ -278,7 +269,7 @@ static bool emm42_speed(uint8_t motor, uint8_t direction, uint16_t speed_rpm)
         }
         return false;
     }
-    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame), &frame[5]);
+    return emm42_send_range(first, last, frame, (uint8_t)sizeof(frame), &frame[5]);
 }
 
 bool forward(uint8_t motor, uint16_t speed_rpm)
@@ -291,9 +282,8 @@ bool backward(uint8_t motor, uint16_t speed_rpm)
     return emm42_speed(motor, EMM42_FORWARD_DIRECTION ^ 1U, speed_rpm);
 }
 
-bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
-                         uint16_t speed_rpm, uint8_t acceleration,
-                         uint32_t pulses)
+static bool emm42_move(uint8_t motor, emm42_direction_t direction, uint16_t speed_rpm,
+                       uint8_t acceleration, uint32_t pulses, bool absolute)
 {
     uint8_t first, last, address;
     uint8_t frame[13] = {
@@ -301,7 +291,7 @@ bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
         (uint8_t)(speed_rpm >> 8), (uint8_t)speed_rpm, acceleration,
         (uint8_t)(pulses >> 24), (uint8_t)(pulses >> 16),
         (uint8_t)(pulses >> 8), (uint8_t)pulses,
-        0x00U, 0x00U, EMM42_CHECKSUM
+        absolute ? 0x01U : 0x00U, 0x00U, EMM42_CHECKSUM
     };
     if (!emm42_select(motor, &first, &last)) {
         return false;
@@ -313,7 +303,19 @@ bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
         }
         return false;
     }
-    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame), NULL);
+    return emm42_send_range(first, last, frame, (uint8_t)sizeof(frame), NULL);
+}
+
+bool emm42_move_relative(uint8_t motor, emm42_direction_t direction,
+                         uint16_t speed_rpm, uint8_t acceleration, uint32_t pulses)
+{
+    return emm42_move(motor, direction, speed_rpm, acceleration, pulses, false);
+}
+
+bool emm42_move_absolute(uint8_t motor, emm42_direction_t direction,
+                         uint16_t speed_rpm, uint8_t acceleration, uint32_t pulses)
+{
+    return emm42_move(motor, direction, speed_rpm, acceleration, pulses, true);
 }
 
 /* 读取只接受单台电机，避免分组的多个结果写入同一输出指针。 */
@@ -332,7 +334,11 @@ static bool emm42_read(uint8_t motor, uint8_t command, void *output,
         }
         return false;
     }
-    return emm42_exchange(frame, (uint8_t)sizeof(frame), payload, payload_length);
+    /* 只在查询前清空旧应答，动作命令不依赖接收端。 */
+    if (!emm42_discard_rx(motor) || !emm42_transmit(frame, (uint8_t)sizeof(frame))) {
+        return false;
+    }
+    return emm42_wait_response(motor, command, payload, payload_length);
 }
 
 static bool emm42_read_signed_position(uint8_t motor, uint8_t command,
@@ -382,8 +388,7 @@ bool emm42_read_enabled(uint8_t motor, bool *enabled)
 {
     emm42_status_t status;
     if (enabled == NULL) {
-        uint8_t payload;
-        return emm42_read(motor, 0x3AU, NULL, &payload, 1U);
+        return emm42_read_status(motor, NULL);
     }
     if (!emm42_read_status(motor, &status)) {
         return false;
@@ -396,8 +401,7 @@ bool emm42_read_stall(uint8_t motor, bool *stalled)
 {
     emm42_status_t status;
     if (stalled == NULL) {
-        uint8_t payload;
-        return emm42_read(motor, 0x3AU, NULL, &payload, 1U);
+        return emm42_read_status(motor, NULL);
     }
     if (!emm42_read_status(motor, &status)) {
         return false;
@@ -412,7 +416,7 @@ static bool emm42_set_enabled(uint8_t motor, bool enable)
         0U, 0xF3U, 0xABU,
         enable ? 0x01U : 0x00U, 0x00U, EMM42_CHECKSUM
     };
-    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame), NULL);
+    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame));
 }
 
 bool emm42_enable(uint8_t motor)
@@ -430,7 +434,7 @@ bool emm42_stop(uint8_t motor)
     uint8_t frame[5] = {
         0U, 0xFEU, 0x98U, 0x00U, EMM42_CHECKSUM
     };
-    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame), NULL);
+    return emm42_send_selected(motor, frame, (uint8_t)sizeof(frame));
 }
 
 void emm42_set_acceleration(uint8_t motor, uint8_t acceleration)

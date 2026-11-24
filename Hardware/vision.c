@@ -1,6 +1,9 @@
 #include "ti_msp_dl_config.h"
 #include "vision.h"
+#include "Software/bsp_timer.h"
 #include <stddef.h>
+
+
 
 static uint8_t rx_buf[frame_size];
 static uint8_t rx_cnt = 0;
@@ -114,6 +117,7 @@ static void Vision_Receive(uint8_t byte)
             parsed.dy = READ_INT16_LE(&rx_buf[5]);
         }
 
+        parsed.sample_ms = get_current_ms();
         latest_data = parsed;
         data_ready = true;
 

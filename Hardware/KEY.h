@@ -1,11 +1,9 @@
-#ifndef _KEY_H
-#define _KEY_H
+#ifndef HARDWARE_KEY_H
+#define HARDWARE_KEY_H
 
-#include "ti_msp_dl_config.h"
-#include "Software/Debug.h"
+#include <stdbool.h>
 
 void KEY_Init(void);
-
-
+bool KEY_TakePositionRequest(void);
 
 #endif
